@@ -18,17 +18,24 @@ import {
   ticketStatuses,
 } from "../../lib/constants";
 import { isApiError, mockApi } from "../../mocks/api";
-import type {
-  Priority,
-  Ticket,
-  TicketFilters,
-  TicketStatus,
-} from "../../types/domain";
+import type { Priority, TicketFilters, TicketStatus } from "../../types/domain";
 import { useAuth } from "../auth/AuthContext";
+import {
+  KanbanBoard,
+  type KanbanStatusDefinition,
+  type KanbanTask,
+} from "../kanban";
 import { BoardPageHeader } from "./BoardPageHeader";
-import { KanbanBoard } from "./KanbanBoard";
 import { TicketForm } from "./TicketForm";
 import { useCreateTicket, useReorderTicket, useTickets } from "./ticketQueries";
+
+const kanbanColumns: KanbanStatusDefinition[] = ticketStatuses.map(
+  (status) => ({
+    id: status,
+    label: statusLabels[status],
+    emptyMessage: `No hay tickets en ${statusLabels[status].toLowerCase()}.`,
+  }),
+);
 
 export function TicketsPage({ archived = false }: { archived?: boolean }) {
   const { user } = useAuth();
@@ -59,8 +66,8 @@ export function TicketsPage({ archived = false }: { archived?: boolean }) {
     setParams(next);
   }
 
-  function canChange(ticket: Ticket) {
-    return user?.role === "admin" || ticket.assignee?.id === user?.id;
+  function canChange(task: KanbanTask) {
+    return user?.role === "admin" || task.assignee?.id === user?.id;
   }
 
   const activeFilterCount = [
@@ -189,28 +196,31 @@ export function TicketsPage({ archived = false }: { archived?: boolean }) {
 
       {ticketsQuery.data?.length && view === "board" ? (
         <KanbanBoard
-          tickets={ticketsQuery.data}
-          canDrag={canChange}
-          onMove={async (ticket, status, position) => {
-            try {
-              await reorderMutation.mutateAsync({
-                id: ticket.id,
-                status,
-                position,
-                version: ticket.version,
-              });
-              toast.success(
-                `Ticket movido a ${statusLabels[status]}, posición ${position + 1}.`,
-              );
-            } catch (error) {
-              toast.error(
-                isApiError(error)
-                  ? error.message
-                  : "No fue posible mover el ticket.",
-              );
-              throw error;
-            }
+          tasks={ticketsQuery.data}
+          columns={kanbanColumns}
+          canDragTask={canChange}
+          onMove={async ({ task, destinationStatus, destinationIndex }) => {
+            const ticket = ticketsQuery.data.find(
+              (item) => item.id === task.id,
+            );
+            if (!ticket) throw new Error("Ticket no encontrado.");
+            await reorderMutation.mutateAsync({
+              id: ticket.id,
+              status: destinationStatus,
+              position: destinationIndex,
+              version: ticket.version,
+            });
+            toast.success(
+              `Ticket movido a ${statusLabels[destinationStatus]}, posición ${destinationIndex + 1}.`,
+            );
           }}
+          onMoveError={(error) =>
+            toast.error(
+              isApiError(error)
+                ? error.message
+                : "No fue posible mover el ticket.",
+            )
+          }
         />
       ) : null}
 

@@ -28,9 +28,10 @@ test("Home de escritorio integra layout, búsqueda, creación y Kanban accesible
   await page.keyboard.press("Space");
   await expect(page.getByText(/Ticket movido a/)).toBeVisible();
 
-  const pointerHandle = page.getByRole("button", { name: /Mover MJ-002/ });
+  const sourceColumn = page.getByTestId("kanban-column-todo");
+  const sourceCard = sourceColumn.getByTestId("task-card-ticket-2");
   const targetColumn = page.getByTestId("kanban-column-in_progress");
-  const handleBox = await pointerHandle.boundingBox();
+  const handleBox = await sourceCard.boundingBox();
   const targetBox = await targetColumn.boundingBox();
   expect(handleBox).not.toBeNull();
   expect(targetBox).not.toBeNull();
