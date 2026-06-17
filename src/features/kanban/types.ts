@@ -17,6 +17,7 @@ export interface KanbanTask {
   position: number;
   labels: Label[];
   assignee: UserSummary | null;
+  version: number;
 }
 
 export interface KanbanStatusDefinition {

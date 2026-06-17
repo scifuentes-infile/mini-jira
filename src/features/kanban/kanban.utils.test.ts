@@ -20,6 +20,7 @@ const task = (
   position,
   labels: [],
   assignee: null,
+  version: 1,
 });
 
 const tasks = [

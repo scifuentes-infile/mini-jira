@@ -13,10 +13,42 @@ import type {
 import { ApiError } from "../types/domain";
 import { ticketStatuses } from "../lib/constants";
 
+const sessionStorageKey = "mini-jira:user-id";
 let currentUserId: string | null = null;
 const wait = (ms = 220) => new Promise((resolve) => setTimeout(resolve, ms));
 const clone = <T>(value: T): T => structuredClone(value);
 const now = () => new Date().toISOString();
+const createId = () => {
+  const browserCrypto = globalThis.crypto;
+  if (typeof browserCrypto?.randomUUID === "function") {
+    return browserCrypto.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+  if (typeof browserCrypto?.getRandomValues === "function") {
+    browserCrypto.getRandomValues(bytes);
+  } else {
+    bytes.forEach((_, index) => {
+      bytes[index] = Math.floor(Math.random() * 256);
+    });
+  }
+
+  const versionByte = bytes.at(6);
+  const variantByte = bytes.at(8);
+  if (versionByte !== undefined) bytes[6] = (versionByte & 0x0f) | 0x40;
+  if (variantByte !== undefined) bytes[8] = (variantByte & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  );
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10, 16).join(""),
+  ].join("-");
+};
 const userSummary = (user: User) => {
   return {
     id: user.id,
@@ -28,8 +60,33 @@ const userSummary = (user: User) => {
   };
 };
 
+function readStoredUserId() {
+  try {
+    return globalThis.localStorage?.getItem(sessionStorageKey) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredUserId(userId: string | null) {
+  try {
+    if (userId) {
+      globalThis.localStorage?.setItem(sessionStorageKey, userId);
+    } else {
+      globalThis.localStorage?.removeItem(sessionStorageKey);
+    }
+  } catch {
+    // The in-memory mock still works when storage is unavailable.
+  }
+}
+
+function sessionUserId() {
+  currentUserId ??= readStoredUserId();
+  return currentUserId;
+}
+
 function currentUser(): User {
-  const user = users.find((item) => item.id === currentUserId);
+  const user = users.find((item) => item.id === sessionUserId());
   if (!user) throw new ApiError(401, "UNAUTHENTICATED", "Sesión no válida.");
   return user;
 }
@@ -77,7 +134,7 @@ function addAudit(
   newValue: string | null,
 ) {
   auditLogs.push({
-    id: crypto.randomUUID(),
+    id: createId(),
     ticketId: ticket.id,
     actor: userSummary(currentUser()),
     action,
@@ -102,19 +159,28 @@ export const mockApi = {
       );
     }
     currentUserId = user.id;
+    writeStoredUserId(user.id);
     return clone(user);
   },
 
   async logout(): Promise<void> {
     await wait(100);
     currentUserId = null;
+    writeStoredUserId(null);
   },
 
   async me(): Promise<User | null> {
     await wait(100);
-    return currentUserId
-      ? clone(users.find((item) => item.id === currentUserId) ?? null)
+    const userId = sessionUserId();
+    const user = userId
+      ? (users.find((item) => item.id === userId && item.status === "active") ??
+        null)
       : null;
+    if (!user) {
+      currentUserId = null;
+      writeStoredUserId(null);
+    }
+    return clone(user);
   },
 
   async listUsers(): Promise<User[]> {
@@ -213,7 +279,7 @@ export const mockApi = {
       : null;
     const createdAt = now();
     const ticket: Ticket = {
-      id: crypto.randomUUID(),
+      id: createId(),
       key: `MJ-${String(tickets.length + 1).padStart(3, "0")}`,
       title: input.title,
       description: input.description,
@@ -450,7 +516,7 @@ export const mockApi = {
     }
     const createdAt = now();
     const comment: Comment = {
-      id: crypto.randomUUID(),
+      id: createId(),
       ticketId,
       author: userSummary(actor),
       body,

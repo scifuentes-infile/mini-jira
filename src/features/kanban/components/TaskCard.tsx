@@ -35,7 +35,6 @@ export function TaskCard({
     attributes,
     listeners,
     setNodeRef,
-    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -89,7 +88,6 @@ export function TaskCard({
         </span>
         <button
           type="button"
-          ref={setActivatorNodeRef}
           className="rounded-md px-2 py-1 text-label-sm uppercase text-on-surface-variant hover:bg-surface-container-high"
           aria-label={`${priorityLabels[task.priority]}. Mover ${task.key}: ${task.title}`}
           onKeyDown={(event) => listeners?.onKeyDown?.(event)}

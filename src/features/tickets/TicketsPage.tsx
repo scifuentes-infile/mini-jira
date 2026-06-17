@@ -200,15 +200,11 @@ export function TicketsPage({ archived = false }: { archived?: boolean }) {
           columns={kanbanColumns}
           canDragTask={canChange}
           onMove={async ({ task, destinationStatus, destinationIndex }) => {
-            const ticket = ticketsQuery.data.find(
-              (item) => item.id === task.id,
-            );
-            if (!ticket) throw new Error("Ticket no encontrado.");
             await reorderMutation.mutateAsync({
-              id: ticket.id,
+              id: task.id,
               status: destinationStatus,
               position: destinationIndex,
-              version: ticket.version,
+              version: task.version,
             });
             toast.success(
               `Ticket movido a ${statusLabels[destinationStatus]}, posición ${destinationIndex + 1}.`,
@@ -218,7 +214,9 @@ export function TicketsPage({ archived = false }: { archived?: boolean }) {
             toast.error(
               isApiError(error)
                 ? error.message
-                : "No fue posible mover el ticket.",
+                : error instanceof Error
+                  ? error.message
+                  : "No fue posible mover el ticket.",
             )
           }
         />
