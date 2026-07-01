@@ -1,0 +1,738 @@
+schema:
+  name: mini_jira
+  version: 1
+  description: >
+    Modelo relacional semántico para Mini Jira. Cubre autenticación,
+    usuarios, tickets, etiquetas, comentarios, auditoría y notificaciones,
+    alineado con el contrato REST del frontend.
+
+conventions:
+  id_strategy: uuid
+  timestamp_type: timestamptz
+  timezone: UTC
+  soft_delete_column: archived_at
+  optimistic_lock_column: version
+  text_search:
+    language: spanish
+    normalization: lower_unaccent
+  response_timeout_notes:
+    list_endpoints: "Objetivo < 300 ms para P95 con índices aplicados."
+    write_endpoints: "Objetivo < 500 ms para P95 incluyendo auditoría/notificación transaccional."
+
+enums:
+  user_role:
+    values: [admin, user]
+  user_status:
+    values: [active, inactive]
+  ticket_status:
+    values: [todo, in_progress, review, blocked, done]
+  ticket_priority:
+    values: [low, medium, high]
+  label_color:
+    values:
+      - secondary-container
+      - primary-fixed
+      - tertiary-fixed
+      - surface-container-highest
+  audit_action:
+    values:
+      - ticket_created
+      - title_changed
+      - description_changed
+      - priority_changed
+      - assignee_changed
+      - status_changed
+      - ticket_reordered
+      - ticket_archived
+      - ticket_restored
+  notification_type:
+    values:
+      - user_mentioned
+      - ticket_assigned
+      - ticket_blocked
+  notification_status:
+    values: [pending, sent, failed, skipped]
+
+tables:
+  users:
+    description: Usuarios autenticables y administrables del workspace.
+    columns:
+      id:
+        type: uuid
+        primary_key: true
+        nullable: false
+        default: gen_random_uuid()
+      username:
+        type: varchar(80)
+        nullable: false
+        unique: true
+        restrictions:
+          - lower_snake_or_dot_username
+          - immutable_after_create
+      name:
+        type: varchar(160)
+        nullable: false
+      email:
+        type: varchar(254)
+        nullable: false
+        unique: true
+        restrictions:
+          - valid_email
+          - case_insensitive_unique
+      password_hash:
+        type: varchar(255)
+        nullable: false
+        notes: "Nunca exponer en API."
+      role:
+        type: user_role
+        nullable: false
+        default: user
+      status:
+        type: user_status
+        nullable: false
+        default: active
+      avatar_url:
+        type: text
+        nullable: true
+      created_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+      updated_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+    foreign_keys: []
+    indexes:
+      - name: idx_users_email_lower
+        columns: [lower(email)]
+        unique: true
+      - name: idx_users_username_lower
+        columns: [lower(username)]
+        unique: true
+      - name: idx_users_status_role
+        columns: [status, role]
+    business_notes:
+      - "No se permite desactivar al último usuario admin activo."
+      - "Usuarios inactivos no pueden iniciar sesión ni ser nuevos responsables de tickets."
+      - "username, created_at e id son inmutables."
+
+  sessions:
+    description: Sesiones HTTP-only para autenticación del frontend.
+    columns:
+      id:
+        type: uuid
+        primary_key: true
+        nullable: false
+        default: gen_random_uuid()
+      user_id:
+        type: uuid
+        nullable: false
+      token_hash:
+        type: varchar(255)
+        nullable: false
+        unique: true
+      ip_address:
+        type: inet
+        nullable: true
+      user_agent:
+        type: text
+        nullable: true
+      created_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+      expires_at:
+        type: timestamptz
+        nullable: false
+      revoked_at:
+        type: timestamptz
+        nullable: true
+    foreign_keys:
+      - column: user_id
+        references: users.id
+        on_delete: cascade
+    indexes:
+      - name: idx_sessions_user_active
+        columns: [user_id, expires_at]
+        where: revoked_at is null
+      - name: idx_sessions_expires_at
+        columns: [expires_at]
+    business_notes:
+      - "Timeout recomendado: expiración absoluta de 8 horas e inactividad de 30 minutos si la capa de aplicación lo soporta."
+      - "Logout marca revoked_at; no elimina inmediatamente para conservar trazabilidad técnica."
+      - "token_hash es secreto y nunca debe retornarse."
+
+  labels:
+    description: Catálogo de etiquetas aplicables a tickets.
+    columns:
+      id:
+        type: uuid
+        primary_key: true
+        nullable: false
+        default: gen_random_uuid()
+      name:
+        type: varchar(80)
+        nullable: false
+        unique: true
+      color:
+        type: label_color
+        nullable: false
+      created_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+      updated_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+    foreign_keys: []
+    indexes:
+      - name: idx_labels_name_lower
+        columns: [lower(name)]
+        unique: true
+    business_notes:
+      - "Eliminación física solo si no está asociada a tickets; si hay uso, rechazar con conflicto."
+      - "name debe ser único sin distinguir mayúsculas/minúsculas."
+
+  tickets:
+    description: Unidad principal de trabajo del sistema.
+    columns:
+      id:
+        type: uuid
+        primary_key: true
+        nullable: false
+        default: gen_random_uuid()
+      key:
+        type: varchar(24)
+        nullable: false
+        unique: true
+        restrictions:
+          - immutable_after_create
+      title:
+        type: varchar(240)
+        nullable: false
+      description:
+        type: text
+        nullable: false
+      status:
+        type: ticket_status
+        nullable: false
+        default: todo
+      priority:
+        type: ticket_priority
+        nullable: false
+      creator_id:
+        type: uuid
+        nullable: false
+        immutable: true
+      assignee_id:
+        type: uuid
+        nullable: true
+      position:
+        type: integer
+        nullable: false
+        default: 0
+        restrictions:
+          - min: 0
+      version:
+        type: integer
+        nullable: false
+        default: 1
+        restrictions:
+          - min: 1
+      created_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+      updated_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+      closed_at:
+        type: timestamptz
+        nullable: true
+      archived_at:
+        type: timestamptz
+        nullable: true
+      search_vector:
+        type: tsvector
+        nullable: true
+        generated_from: title, description, key
+    foreign_keys:
+      - column: creator_id
+        references: users.id
+        on_delete: restrict
+      - column: assignee_id
+        references: users.id
+        on_delete: set_null
+    indexes:
+      - name: uq_tickets_key
+        columns: [key]
+        unique: true
+      - name: idx_tickets_active_status_position
+        columns: [status, position]
+        where: archived_at is null
+      - name: idx_tickets_archived_at
+        columns: [archived_at]
+      - name: idx_tickets_assignee_active
+        columns: [assignee_id, status]
+        where: archived_at is null
+      - name: idx_tickets_creator_active
+        columns: [creator_id, status]
+        where: archived_at is null
+      - name: idx_tickets_priority_active
+        columns: [priority]
+        where: archived_at is null
+      - name: idx_tickets_updated_at_desc
+        columns: [updated_at desc]
+      - name: idx_tickets_closed_at
+        columns: [closed_at]
+        where: closed_at is not null
+      - name: idx_tickets_search_vector
+        columns: [search_vector]
+        using: gin
+    business_notes:
+      - "Soft-delete: archivar asigna archived_at; nunca eliminar físicamente desde la acción visual de eliminar."
+      - "Tickets archivados no pueden editarse, moverse, cambiar estado ni recibir comentarios."
+      - "version implementa concurrencia optimista; toda mutación de ticket debe validar la versión recibida."
+      - "creator_id, key y created_at son inmutables."
+      - "closed_at se asigna al pasar a done y se limpia al reabrir."
+      - "position debe normalizarse por columna/status en tickets activos."
+      - "Visibilidad: admin ve todo; user ve tickets creados por él o asignados a él, incluyendo archivados visibles bajo la misma regla."
+
+  ticket_labels:
+    description: Relación N:M entre tickets y etiquetas.
+    columns:
+      ticket_id:
+        type: uuid
+        nullable: false
+        primary_key_part: true
+      label_id:
+        type: uuid
+        nullable: false
+        primary_key_part: true
+      created_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+    foreign_keys:
+      - column: ticket_id
+        references: tickets.id
+        on_delete: cascade
+      - column: label_id
+        references: labels.id
+        on_delete: restrict
+    indexes:
+      - name: pk_ticket_labels
+        columns: [ticket_id, label_id]
+        unique: true
+      - name: idx_ticket_labels_label_id
+        columns: [label_id]
+    business_notes:
+      - "Actualizar etiquetas de un ticket reemplaza el conjunto completo y debe registrar auditoría si el cambio es relevante para negocio."
+
+  comments:
+    description: Comentarios colaborativos dentro de tickets.
+    columns:
+      id:
+        type: uuid
+        primary_key: true
+        nullable: false
+        default: gen_random_uuid()
+      ticket_id:
+        type: uuid
+        nullable: false
+      author_id:
+        type: uuid
+        nullable: false
+      body:
+        type: text
+        nullable: false
+        restrictions:
+          - min_length: 1
+          - max_length: 2000
+      idempotency_key:
+        type: varchar(120)
+        nullable: true
+      created_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+      updated_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+    foreign_keys:
+      - column: ticket_id
+        references: tickets.id
+        on_delete: cascade
+      - column: author_id
+        references: users.id
+        on_delete: restrict
+    indexes:
+      - name: idx_comments_ticket_created
+        columns: [ticket_id, created_at, id]
+      - name: uq_comments_author_idempotency
+        columns: [author_id, idempotency_key]
+        unique: true
+        where: idempotency_key is not null
+    business_notes:
+      - "No se permite comentar en tickets archivados."
+      - "created_at es inmutable y define el orden primario de conversación; id desempata comentarios simultáneos."
+      - "idempotency_key evita duplicar efectos secundarios por reintentos del cliente."
+      - "Timeout recomendado para detección de menciones y encolado de notificaciones: dentro de la misma transacción o outbox en < 500 ms."
+
+  comment_mentions:
+    description: Menciones detectadas en comentarios mediante formato @username.
+    columns:
+      id:
+        type: uuid
+        primary_key: true
+        nullable: false
+        default: gen_random_uuid()
+      comment_id:
+        type: uuid
+        nullable: false
+      mentioned_user_id:
+        type: uuid
+        nullable: false
+      username_token:
+        type: varchar(80)
+        nullable: false
+      created_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+    foreign_keys:
+      - column: comment_id
+        references: comments.id
+        on_delete: cascade
+      - column: mentioned_user_id
+        references: users.id
+        on_delete: cascade
+    indexes:
+      - name: uq_comment_mentions_unique_user
+        columns: [comment_id, mentioned_user_id]
+        unique: true
+      - name: idx_comment_mentions_user_created
+        columns: [mentioned_user_id, created_at desc]
+    business_notes:
+      - "Una misma persona mencionada varias veces en un comentario debe generar una sola mención lógica."
+      - "Usuarios inactivos pueden conservar menciones históricas, pero no deberían recibir nuevas notificaciones."
+
+  audit_logs:
+    description: Registro inmutable de eventos relevantes de tickets.
+    columns:
+      id:
+        type: uuid
+        primary_key: true
+        nullable: false
+        default: gen_random_uuid()
+      ticket_id:
+        type: uuid
+        nullable: false
+      actor_id:
+        type: uuid
+        nullable: false
+      action:
+        type: audit_action
+        nullable: false
+      field:
+        type: varchar(80)
+        nullable: true
+      old_value:
+        type: text
+        nullable: true
+      new_value:
+        type: text
+        nullable: true
+      created_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+    foreign_keys:
+      - column: ticket_id
+        references: tickets.id
+        on_delete: cascade
+      - column: actor_id
+        references: users.id
+        on_delete: restrict
+    indexes:
+      - name: idx_audit_logs_ticket_created_desc
+        columns: [ticket_id, created_at desc]
+      - name: idx_audit_logs_actor_created_desc
+        columns: [actor_id, created_at desc]
+      - name: idx_audit_logs_action_created_desc
+        columns: [action, created_at desc]
+    business_notes:
+      - "Tabla append-only: no update ni delete desde flujos de negocio."
+      - "Debe escribirse en la misma transacción que la mutación del ticket."
+      - "old_value y new_value guardan representación textual estable para auditoría humana."
+
+  notifications:
+    description: Notificaciones internas derivadas de menciones, asignaciones y bloqueos.
+    columns:
+      id:
+        type: uuid
+        primary_key: true
+        nullable: false
+        default: gen_random_uuid()
+      type:
+        type: notification_type
+        nullable: false
+      recipient_user_id:
+        type: uuid
+        nullable: false
+      actor_id:
+        type: uuid
+        nullable: true
+      ticket_id:
+        type: uuid
+        nullable: false
+      comment_id:
+        type: uuid
+        nullable: true
+      dedupe_key:
+        type: varchar(180)
+        nullable: false
+        unique: true
+      status:
+        type: notification_status
+        nullable: false
+        default: pending
+      read_at:
+        type: timestamptz
+        nullable: true
+      created_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+      sent_at:
+        type: timestamptz
+        nullable: true
+      failed_at:
+        type: timestamptz
+        nullable: true
+      failure_reason:
+        type: text
+        nullable: true
+    foreign_keys:
+      - column: recipient_user_id
+        references: users.id
+        on_delete: cascade
+      - column: actor_id
+        references: users.id
+        on_delete: set_null
+      - column: ticket_id
+        references: tickets.id
+        on_delete: cascade
+      - column: comment_id
+        references: comments.id
+        on_delete: cascade
+    indexes:
+      - name: uq_notifications_dedupe_key
+        columns: [dedupe_key]
+        unique: true
+      - name: idx_notifications_recipient_created_desc
+        columns: [recipient_user_id, created_at desc]
+      - name: idx_notifications_recipient_unread
+        columns: [recipient_user_id, created_at desc]
+        where: read_at is null
+      - name: idx_notifications_status_created
+        columns: [status, created_at]
+      - name: idx_notifications_ticket
+        columns: [ticket_id]
+    business_notes:
+      - "dedupe_key evita notificaciones duplicadas por reintentos."
+      - "Tipos requeridos por negocio: user_mentioned, ticket_assigned, ticket_blocked."
+      - "read_at nulo significa no leída."
+      - "Timeout recomendado para envío externo: procesar desde outbox con reintentos; no bloquear respuesta principal por correo."
+
+  notification_attempts:
+    description: Trazabilidad de intentos de entrega de notificaciones.
+    columns:
+      id:
+        type: uuid
+        primary_key: true
+        nullable: false
+        default: gen_random_uuid()
+      notification_id:
+        type: uuid
+        nullable: false
+      channel:
+        type: varchar(40)
+        nullable: false
+        default: email
+      provider_message_id:
+        type: varchar(180)
+        nullable: true
+      status:
+        type: notification_status
+        nullable: false
+      error_message:
+        type: text
+        nullable: true
+      attempted_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+    foreign_keys:
+      - column: notification_id
+        references: notifications.id
+        on_delete: cascade
+    indexes:
+      - name: idx_notification_attempts_notification
+        columns: [notification_id, attempted_at desc]
+      - name: idx_notification_attempts_status
+        columns: [status, attempted_at desc]
+    business_notes:
+      - "Append-only para conservar trazabilidad de reintentos."
+      - "No crear una nueva notification para reintentos; crear notification_attempts."
+
+  outbox_events:
+    description: Eventos transaccionales pendientes para procesamiento asíncrono.
+    columns:
+      id:
+        type: uuid
+        primary_key: true
+        nullable: false
+        default: gen_random_uuid()
+      aggregate_type:
+        type: varchar(80)
+        nullable: false
+      aggregate_id:
+        type: uuid
+        nullable: false
+      event_type:
+        type: varchar(120)
+        nullable: false
+      payload:
+        type: jsonb
+        nullable: false
+      idempotency_key:
+        type: varchar(180)
+        nullable: false
+        unique: true
+      created_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+        immutable: true
+      available_at:
+        type: timestamptz
+        nullable: false
+        default: now()
+      processed_at:
+        type: timestamptz
+        nullable: true
+      attempts:
+        type: integer
+        nullable: false
+        default: 0
+      last_error:
+        type: text
+        nullable: true
+    foreign_keys: []
+    indexes:
+      - name: idx_outbox_events_pending
+        columns: [available_at, created_at]
+        where: processed_at is null
+      - name: uq_outbox_events_idempotency_key
+        columns: [idempotency_key]
+        unique: true
+    business_notes:
+      - "Usar para desacoplar envío de correo u otros efectos secundarios."
+      - "Timeout de procesamiento recomendado: workers deben reclamar eventos pendientes cada 5-15 segundos."
+      - "Retención sugerida: conservar procesados 30-90 días según necesidades de auditoría técnica."
+
+relationships:
+  - name: user_created_tickets
+    from: users.id
+    to: tickets.creator_id
+    cardinality: one_to_many
+  - name: user_assigned_tickets
+    from: users.id
+    to: tickets.assignee_id
+    cardinality: one_to_many_optional
+  - name: ticket_comments
+    from: tickets.id
+    to: comments.ticket_id
+    cardinality: one_to_many
+  - name: ticket_audit_logs
+    from: tickets.id
+    to: audit_logs.ticket_id
+    cardinality: one_to_many
+  - name: ticket_labels
+    from: tickets.id
+    to: labels.id
+    via: ticket_labels
+    cardinality: many_to_many
+  - name: user_notifications
+    from: users.id
+    to: notifications.recipient_user_id
+    cardinality: one_to_many
+
+transactional_rules:
+  create_ticket:
+    writes: [tickets, ticket_labels, audit_logs]
+    atomic: true
+    notes:
+      - "Generar key única MJ-### o equivalente transaccional."
+      - "Crear auditoría ticket_created."
+  update_ticket:
+    writes: [tickets, ticket_labels, audit_logs, notifications, outbox_events]
+    atomic: true
+    notes:
+      - "Validar version antes de escribir."
+      - "Incrementar version exactamente una vez por mutación exitosa."
+      - "Asignación de responsable puede generar ticket_assigned."
+  change_status:
+    writes: [tickets, audit_logs, notifications, outbox_events]
+    atomic: true
+    notes:
+      - "Cambio a blocked puede generar ticket_blocked."
+      - "Cambio a done asigna closed_at."
+  reorder_ticket:
+    writes: [tickets, audit_logs]
+    atomic: true
+    notes:
+      - "Normalizar posiciones de columnas afectadas."
+  archive_ticket:
+    writes: [tickets, audit_logs]
+    atomic: true
+    notes:
+      - "Soft-delete mediante archived_at."
+  restore_ticket:
+    writes: [tickets, audit_logs]
+    atomic: true
+    notes:
+      - "Solo admin."
+  add_comment:
+    writes: [comments, comment_mentions, notifications, outbox_events]
+    atomic: true
+    notes:
+      - "Rechazar si ticket.archived_at no es null."
+      - "Detectar menciones y deduplicarlas por comentario."
+
+retention_and_cleanup:
+  sessions:
+    expired_sessions: "Eliminar o archivar sesiones expiradas después de 30 días."
+  outbox_events:
+    processed_events: "Retener 30-90 días."
+  notification_attempts:
+    attempts: "Retener según política de auditoría técnica, mínimo 90 días sugeridos."
+  audit_logs:
+    retention: "Retención indefinida para trazabilidad funcional."
+  tickets:
+    archived_tickets: "No eliminar automáticamente; archivado lógico indefinido salvo política legal explícita."

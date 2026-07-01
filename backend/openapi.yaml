@@ -1,0 +1,956 @@
+openapi: 3.0.3
+info:
+  title: Mini Jira API
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: "#/components/schemas/Role"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        avatarUrl:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - username
+        - name
+        - email
+        - role
+        - status
+        - avatarUrl
+        - createdAt
+        - updatedAt
+    Role:
+      type: string
+      enum:
+        - admin
+        - user
+    UserStatus:
+      type: string
+      enum:
+        - active
+        - inactive
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        avatarUrl:
+          type: string
+          nullable: true
+      required:
+        - id
+        - username
+        - name
+        - email
+        - status
+        - avatarUrl
+    Label:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        color:
+          $ref: "#/components/schemas/LabelColor"
+      required:
+        - id
+        - name
+        - color
+    LabelColor:
+      type: string
+      enum:
+        - secondary-container
+        - primary-fixed
+        - tertiary-fixed
+        - surface-container-highest
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        priority:
+          $ref: "#/components/schemas/Priority"
+        labels:
+          type: array
+          items:
+            $ref: "#/components/schemas/Label"
+        creator:
+          allOf:
+            - $ref: "#/components/schemas/UserSummary"
+            - nullable: true
+        assignee:
+          allOf:
+            - $ref: "#/components/schemas/UserSummary"
+            - nullable: true
+        createdAt:
+          type: string
+          nullable: true
+          format: date-time
+        updatedAt:
+          type: string
+          nullable: true
+          format: date-time
+        closedAt:
+          type: string
+          nullable: true
+          format: date-time
+        archivedAt:
+          type: string
+          nullable: true
+          format: date-time
+        position:
+          type: integer
+        version:
+          type: integer
+      required:
+        - id
+        - key
+        - title
+        - description
+        - status
+        - priority
+        - labels
+        - creator
+        - assignee
+        - createdAt
+        - updatedAt
+        - closedAt
+        - archivedAt
+        - position
+        - version
+    TicketStatus:
+      type: string
+      enum:
+        - todo
+        - in_progress
+        - review
+        - blocked
+        - done
+    Priority:
+      type: string
+      enum:
+        - low
+        - medium
+        - high
+    ApiError:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          nullable: true
+      required:
+        - code
+        - message
+    ErrorEnvelope:
+      type: object
+      properties:
+        data:
+          nullable: true
+        error:
+          $ref: "#/components/schemas/ApiError"
+      required:
+        - data
+        - error
+    TicketLock:
+      type: object
+      properties:
+        ticketId:
+          type: string
+          format: uuid
+        lockedBy:
+          $ref: "#/components/schemas/UserSummary"
+        lockedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+      required:
+        - ticketId
+        - lockedBy
+        - lockedAt
+        - expiresAt
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticketId:
+          type: string
+          format: uuid
+        actor:
+          allOf:
+            - $ref: "#/components/schemas/UserSummary"
+            - nullable: true
+        action:
+          type: string
+        field:
+          type: string
+          nullable: true
+        oldValue:
+          type: string
+          nullable: true
+        newValue:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - ticketId
+        - actor
+        - action
+        - field
+        - oldValue
+        - newValue
+        - createdAt
+    LoginPayload:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+      required:
+        - email
+        - password
+    CreateTicketPayload:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        description:
+          type: string
+          minLength: 1
+        priority:
+          $ref: "#/components/schemas/Priority"
+        assigneeId:
+          type: string
+          nullable: true
+          format: uuid
+        labelIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+      required:
+        - title
+        - description
+        - priority
+    UpdateTicketPayload:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        description:
+          type: string
+          minLength: 1
+        priority:
+          $ref: "#/components/schemas/Priority"
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        assigneeId:
+          type: string
+          nullable: true
+          format: uuid
+        labelIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        version:
+          type: integer
+          minimum: 1
+      required:
+        - version
+    ChangeStatusPayload:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        version:
+          type: integer
+          minimum: 1
+      required:
+        - status
+        - version
+    ChangePositionPayload:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        position:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 1
+      required:
+        - status
+        - position
+        - version
+    VersionPayload:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+      required:
+        - version
+    LockTicketPayload:
+      type: object
+      properties:
+        timeoutSeconds:
+          type: integer
+          minimum: 30
+          maximum: 3600
+          default: 300
+    UserEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user:
+              allOf:
+                - $ref: "#/components/schemas/User"
+                - nullable: true
+          required:
+            - user
+        error:
+          nullable: true
+      required:
+        - data
+        - error
+    TicketEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            ticket:
+              $ref: "#/components/schemas/Ticket"
+          required:
+            - ticket
+        error:
+          nullable: true
+      required:
+        - data
+        - error
+    TicketListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Ticket"
+            total:
+              type: integer
+            limit:
+              type: integer
+            offset:
+              type: integer
+          required:
+            - items
+            - total
+            - limit
+            - offset
+        error:
+          nullable: true
+      required:
+        - data
+        - error
+    TicketLockEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            lock:
+              $ref: "#/components/schemas/TicketLock"
+          required:
+            - lock
+        error:
+          nullable: true
+      required:
+        - data
+        - error
+    AuditLogListEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/AuditLog"
+            total:
+              type: integer
+            limit:
+              type: integer
+            offset:
+              type: integer
+          required:
+            - items
+            - total
+            - limit
+            - offset
+        error:
+          nullable: true
+      required:
+        - data
+        - error
+  parameters: {}
+paths:
+  /api/v1/auth/login:
+    post:
+      tags:
+        - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginPayload"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserEnvelope"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /api/v1/auth/logout:
+    post:
+      tags:
+        - Auth
+      responses:
+        "204":
+          description: Logged out
+  /api/v1/auth/me:
+    get:
+      tags:
+        - Auth
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserEnvelope"
+  /api/v1/tickets:
+    get:
+      tags:
+        - Tickets
+      responses:
+        "200":
+          description: Ticket list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketListEnvelope"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    post:
+      tags:
+        - Tickets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTicketPayload"
+      responses:
+        "201":
+          description: Created ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /api/v1/tickets/{ticketId}:
+    get:
+      tags:
+        - Tickets
+      responses:
+        "200":
+          description: Ticket detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    put:
+      tags:
+        - Tickets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTicketPayload"
+      responses:
+        "200":
+          description: Updated ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422":
+          description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    patch:
+      tags:
+        - Tickets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTicketPayload"
+      responses:
+        "200":
+          description: Patched ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422":
+          description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /api/v1/tickets/{ticketId}/status:
+    patch:
+      tags:
+        - Tickets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeStatusPayload"
+      responses:
+        "200":
+          description: Changed status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422":
+          description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /api/v1/tickets/{ticketId}/position:
+    patch:
+      tags:
+        - Tickets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePositionPayload"
+      responses:
+        "200":
+          description: Changed position
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422":
+          description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /api/v1/tickets/{ticketId}/archive:
+    post:
+      tags:
+        - Tickets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionPayload"
+      responses:
+        "200":
+          description: Archived ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /api/v1/tickets/{ticketId}/restore:
+    post:
+      tags:
+        - Tickets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionPayload"
+      responses:
+        "200":
+          description: Restored ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /api/v1/tickets/{ticketId}/lock:
+    post:
+      tags:
+        - Locks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LockTicketPayload"
+      responses:
+        "200":
+          description: Locked or renewed ticket lock
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketLockEnvelope"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    delete:
+      tags:
+        - Locks
+      responses:
+        "204":
+          description: Released ticket lock
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /api/v1/audit/{ticketId}:
+    get:
+      tags:
+        - Audit
+      responses:
+        "200":
+          description: Ticket audit log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogListEnvelope"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"

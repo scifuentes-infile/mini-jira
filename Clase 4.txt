@@ -1,0 +1,62 @@
+"mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "TU_PERSONAL_ACCESS_TOKEN"
+      ]
+    }
+  }
+ 
+ 
+ 
+ 
+ 
+ "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "TU_PERSONAL_ACCESS_TOKEN"
+      ]
+    }
+  }
+  
+  
+  
+  
+  
+  El MCP de Supabase está activo y conectado al proyecto mini-jira.
+ 
+Lee @database-schema.yaml y crea todas las tablas en Supabase via MCP. Sigue este orden para respetar las FKs:
+1. users, tags
+2. projects, tickets
+3. project_members, ticket_assignees, ticket_tags, comments
+4. audit_log, ticket_locks
+ 
+Después de crear cada tabla, verifica que existe antes de continuar con la siguiente. Si una tabla falla, corrígela en el mismo ciclo sin pedirme ayuda. Al terminar, lista todas las tablas creadas.
+
+
+
+
+Lee @api-contract.md, @database-schema.yaml y codex
+ 
+Usa AskUserQuestion: ¿client Supabase (@supabase/supabase-js o directo)?, ¿connection pooling?, ¿TypeScript strict?, ¿envelope de error { data, error }?
+ 
+Con mis respuestas: (1) Crea el proyecto Next.js. (2) Crea src/lib/supabase.ts como singleton exportado — nunca instanciar el cliente dentro de un route. (3) Instala @asteasolutions/zod-to-openapi. Genera openapi.yaml desde api-contract.md y sirve Swagger UI en /api/docs. (4) Construye endpoints P0. Por cada route.ts: schema Zod con .openapi() metadata, envelope { data, error }, try-catch, actualizar openapi.yaml.
+
+
+
+
+Lee @api-contract.md, @database-schema.yaml y @openapi.yaml.
+ 
+Construye POST y DELETE /tickets/[id]/lock: lógica de timeout (expires_at < now()), renovar si mismo usuario, 409 con datos del bloqueador si es otro.
+ 
+En PATCH /tickets/[id]: cuando status cambie, insertar en audit_log en transacción atómica — si el INSERT falla, el PATCH se revierte. GET /audit/[ticketId] solo lectura.
+ 
+Por cada endpoint nuevo: schema Zod con .openapi() metadata y actualizar openapi.yaml. Verificar que /api/docs muestra las rutas nuevas.
+

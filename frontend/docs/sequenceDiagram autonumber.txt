@@ -1,0 +1,45 @@
+sequenceDiagram
+    autonumber
+
+    actor User as Usuario
+    participant Front as Frontend Web
+    participant API as Backend API
+    participant DB as PostgreSQL
+
+    User->>Front: Mueve ticket de columna "To-Do" a "Done"
+    Front->>Front: Lee ticket_id, status actual y version actual
+    Front->>API: PATCH /tickets/{ticket_id}/status<br>{ status: "done", version }
+
+    API->>API: Validar sesión autenticada
+    API->>API: Validar permiso para cambiar estado
+    API->>DB: SELECT id, status, assignee_id, archived_at, version<br>FROM tickets WHERE id = ticket_id
+
+    DB-->>API: Ticket encontrado
+
+    alt Ticket archivado
+        API-->>Front: 409 Conflict<br>"El ticket archivado no puede modificarse"
+        Front-->>User: Muestra error de edición bloqueada
+    else Usuario sin permisos
+        API-->>Front: 403 Forbidden<br>"No tiene permisos para cambiar este ticket"
+        Front-->>User: Muestra error de permisos
+    else Version desactualizada
+        API-->>Front: 409 Conflict<br>"El ticket fue modificado por otra persona"
+        Front-->>User: Solicita recargar la versión más reciente
+    else Cambio válido
+        API->>DB: BEGIN TRANSACTION
+
+        API->>DB: UPDATE tickets<br>SET status = "done", closed_at = NOW(), version = version + 1, updated_at = NOW()<br>WHERE id = ticket_id AND version = version_actual
+
+        DB-->>API: Ticket actualizado
+
+        API->>DB: INSERT INTO ticket_audit_logs<br>(ticket_id, user_id, field, old_value, new_value, created_at)<br>VALUES (ticket_id, user_id, "status", "todo", "done", NOW())
+
+        DB-->>API: Auditoría registrada
+
+        API->>DB: COMMIT
+
+        API-->>Front: 200 OK<br>{ ticket_id, status: "done", closed_at, version_nueva }
+
+        Front->>Front: Actualiza caché/listado local
+        Front-->>User: Muestra ticket en columna "Done"
+    end
