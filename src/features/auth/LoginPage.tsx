@@ -6,7 +6,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
-import { isApiError } from "../../mocks/api";
+import { isApiError } from "../../lib/api";
 import { useAuth } from "./AuthContext";
 
 const schema = z.object({

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { Button } from "../../components/ui/Button";
 import { Field, Select, Textarea } from "../../components/ui/Field";
 import { priorityLabels } from "../../lib/constants";
-import { mockApi } from "../../mocks/api";
+import { api } from "../../lib/api";
 import type { Ticket, TicketInput } from "../../types/domain";
 import { useAuth } from "../auth/AuthContext";
 
@@ -41,11 +41,11 @@ export function TicketForm({
   const { user } = useAuth();
   const usersQuery = useQuery({
     queryKey: ["users"],
-    queryFn: mockApi.listUsers,
+    queryFn: api.listUsers,
   });
   const labelsQuery = useQuery({
     queryKey: ["labels"],
-    queryFn: mockApi.listLabels,
+    queryFn: api.listLabels,
   });
   const {
     register,

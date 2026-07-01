@@ -17,7 +17,7 @@ import {
   statusLabels,
   ticketStatuses,
 } from "../../lib/constants";
-import { isApiError, mockApi } from "../../mocks/api";
+import { api, isApiError } from "../../lib/api";
 import type { Priority, TicketFilters, TicketStatus } from "../../types/domain";
 import { useAuth } from "../auth/AuthContext";
 import {
@@ -53,7 +53,7 @@ export function TicketsPage({ archived = false }: { archived?: boolean }) {
   const ticketsQuery = useTickets(filters);
   const usersQuery = useQuery({
     queryKey: ["users"],
-    queryFn: mockApi.listUsers,
+    queryFn: api.listUsers,
   });
   const createMutation = useCreateTicket();
   const reorderMutation = useReorderTicket();

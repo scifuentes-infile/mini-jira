@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { mockApi } from "../../mocks/api";
+import { api } from "../../lib/api";
 import type { User } from "../../types/domain";
 
 interface AuthContextValue {
@@ -23,10 +23,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    void mockApi.me().then((result) => {
-      setUser(result);
-      setLoading(false);
-    });
+    void api
+      .me()
+      .then((result) => {
+        setUser(result);
+      })
+      .catch(() => {
+        setUser(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -34,10 +41,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       async login(email, password) {
-        setUser(await mockApi.login(email, password));
+        setUser(await api.login(email, password));
       },
       async logout() {
-        await mockApi.logout();
+        await api.logout();
         setUser(null);
       },
     }),

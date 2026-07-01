@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { mockApi } from "../../mocks/api";
+import { api } from "../../lib/api";
 import type {
   TicketFilters,
   TicketInput,
@@ -15,21 +15,21 @@ export const ticketKeys = {
 export function useTickets(filters: TicketFilters) {
   return useQuery({
     queryKey: ticketKeys.list(filters),
-    queryFn: () => mockApi.listTickets(filters),
+    queryFn: () => api.listTickets(filters),
   });
 }
 
 export function useTicket(id: string) {
   return useQuery({
     queryKey: ticketKeys.detail(id),
-    queryFn: () => mockApi.getTicket(id),
+    queryFn: () => api.getTicket(id),
   });
 }
 
 export function useCreateTicket() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: TicketInput) => mockApi.createTicket(input),
+    mutationFn: (input: TicketInput) => api.createTicket(input),
     onSuccess: () => client.invalidateQueries({ queryKey: ticketKeys.all }),
   });
 }
@@ -38,7 +38,7 @@ export function useUpdateTicket(id: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: TicketInput & { version: number }) =>
-      mockApi.updateTicket(id, input),
+      api.updateTicket(id, input),
     onSuccess: (ticket) => {
       client.setQueryData(ticketKeys.detail(id), ticket);
       void client.invalidateQueries({ queryKey: ticketKeys.all });
@@ -57,7 +57,7 @@ export function useChangeStatus() {
       id: string;
       status: TicketStatus;
       version: number;
-    }) => mockApi.changeStatus(id, status, version),
+    }) => api.changeStatus(id, status, version),
     onSuccess: (ticket) => {
       client.setQueryData(ticketKeys.detail(ticket.id), ticket);
       void client.invalidateQueries({ queryKey: ticketKeys.all });
@@ -79,7 +79,7 @@ export function useReorderTicket() {
       status: TicketStatus;
       position: number;
       version: number;
-    }) => mockApi.reorderTicket(id, status, position, version),
+    }) => api.reorderTicket(id, status, position, version),
     onSuccess: (ticket) => {
       client.setQueryData(ticketKeys.detail(ticket.id), ticket);
       void client.invalidateQueries({ queryKey: ticketKeys.all });
@@ -92,7 +92,7 @@ export function useArchiveTicket() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ id, version }: { id: string; version: number }) =>
-      mockApi.archiveTicket(id, version),
+      api.archiveTicket(id, version),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ticketKeys.all });
       void client.invalidateQueries({ queryKey: ["dashboard"] });
@@ -104,7 +104,7 @@ export function useRestoreTicket() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ id, version }: { id: string; version: number }) =>
-      mockApi.restoreTicket(id, version),
+      api.restoreTicket(id, version),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ticketKeys.all });
       void client.invalidateQueries({ queryKey: ["dashboard"] });
