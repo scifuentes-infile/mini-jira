@@ -1,0 +1,15 @@
+site_name: Mini Jira Docs
+site_description: Documentacion tecnica del Mini Jira
+docs_dir: docs
+nav:
+  - Inicio: index.md
+  - API Reference: api-reference.md
+  - Diagramas: diagramas.md
+  - Cobertura de Tests: cobertura-tests.md
+  - Base de Datos: base-de-datos.md
+theme:
+  name: material
+markdown_extensions:
+  - admonition
+  - tables
+  - fenced_code
